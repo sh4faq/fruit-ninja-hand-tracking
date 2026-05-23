@@ -1,0 +1,32 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Build (javac, Java 8 target)",
+            "type": "shell",
+            "command": "javac",
+            "args": [
+                "-d", "bin",
+                "--release", "8",
+                "-sourcepath", "src",
+                "src/game/Main.java"
+            ],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "problemMatcher": ["$tsc"]
+        },
+        {
+            "label": "Run hand tracker (Python sidecar)",
+            "type": "shell",
+            "command": "py",
+            "args": ["-3.13", "hand_tracker.py"],
+            "presentation": {
+                "panel": "dedicated",
+                "reveal": "always"
+            },
+            "problemMatcher": []
+        }
+    ]
+}

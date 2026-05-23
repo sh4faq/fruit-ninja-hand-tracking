@@ -1,0 +1,22 @@
+# Dojo floor plan for chapter splash backgrounds.
+# Tile palette (built procedurally in TileMap.buildDojoTiles):
+#   A = wooden floor plank
+#   B = paper shoji screen
+#   C = stone wall
+#   D = paper lantern
+# . = empty cell
+#
+# Format: first non-comment line is "tileWidth tileHeight" in pixels.
+
+64 64
+CCCCCCCCCCCCCCCC
+CD............DC
+BAAAAAAAAAAAAAAB
+BAAAAAAAAAAAAAAB
+BAAAAAAAAAAAAAAB
+BAAAAAAAAAAAAAAB
+BAAAAAAAAAAAAAAB
+BAAAAAAAAAAAAAAB
+BAAAAAAAAAAAAAAB
+CD............DC
+CCCCCCCCCCCCCCCC
