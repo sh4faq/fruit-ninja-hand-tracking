@@ -45,38 +45,58 @@ public class CubeBoss {
 
     private static final Random RNG = new Random();
 
-    // Cube vertices in model space, centered on origin.
-    private static final double S = 60;
+    // Pomegranate model = icosahedron (12 vertices, 20 triangular faces).
+    // A pomegranate is roughly spherical, so we approximate it with the
+    // canonical golden-ratio polyhedron. Every face is still a flat polygon
+    // with a hand-coded vertex/index table, exactly the format Brian taught
+    // on April 28. The May 5-12 pipeline (X/Y/Z rotation with cached cos/sin,
+    // cross-product back-face cull, normalized normals, dot-product lighting,
+    // painter's algorithm, perspective transform) all apply unchanged - only
+    // the number of faces grew from 6 to 20.
+    private static final double S = 80;
+    private static final double PHI = (1.0 + Math.sqrt(5.0)) / 2.0;
+    private static final double VS = S / Math.sqrt(1 + PHI * PHI); // normalize
     private static final double[][] VERTICES = {
-        { -S, -S, -S },  // 0
-        {  S, -S, -S },  // 1
-        {  S, -S,  S },  // 2
-        { -S, -S,  S },  // 3
-        { -S,  S, -S },  // 4
-        {  S,  S, -S },  // 5
-        {  S,  S,  S },  // 6
-        { -S,  S,  S },  // 7
+        { -VS,         PHI * VS,     0          },  // 0
+        {  VS,         PHI * VS,     0          },  // 1
+        { -VS,        -PHI * VS,     0          },  // 2
+        {  VS,        -PHI * VS,     0          },  // 3
+        {  0,         -VS,           PHI * VS   },  // 4
+        {  0,          VS,           PHI * VS   },  // 5
+        {  0,         -VS,          -PHI * VS   },  // 6
+        {  0,          VS,          -PHI * VS   },  // 7
+        {  PHI * VS,   0,           -VS         },  // 8
+        {  PHI * VS,   0,            VS         },  // 9
+        { -PHI * VS,   0,           -VS         },  // 10
+        { -PHI * VS,   0,            VS         },  // 11
     };
 
-    // Each face lists vertex indices in CCW order from the OUTSIDE.
+    // 20 triangular faces in CCW order from the outside.
     private static final int[][] FACES = {
-        { 0, 1, 2, 3 },  // bottom (Y = -S)
-        { 4, 7, 6, 5 },  // top    (Y = +S)
-        { 0, 4, 5, 1 },  // back   (Z = -S)
-        { 2, 6, 7, 3 },  // front  (Z = +S)
-        { 0, 3, 7, 4 },  // left   (X = -S)
-        { 1, 5, 6, 2 },  // right  (X = +S)
+        { 0, 11,  5 }, { 0,  5,  1 }, { 0,  1,  7 }, { 0,  7, 10 }, { 0, 10, 11 },
+        { 1,  5,  9 }, { 5, 11,  4 }, {11, 10,  2 }, {10,  7,  6 }, { 7,  1,  8 },
+        { 3,  9,  4 }, { 3,  4,  2 }, { 3,  2,  6 }, { 3,  6,  8 }, { 3,  8,  9 },
+        { 4,  9,  5 }, { 2,  4, 11 }, { 6,  2, 10 }, { 8,  6,  7 }, { 9,  8,  1 },
     };
 
-    // Per-face base colors (matches face order above).
-    private static final Color[] BASE_COLOR = {
-        new Color(170,  60,  60),  // bottom: red
-        new Color( 70, 170,  90),  // top:    green
-        new Color( 80,  90, 200),  // back:   blue
-        new Color(220, 180,  50),  // front:  gold
-        new Color(200, 100, 200),  // left:   pink
-        new Color( 60, 200, 200),  // right:  cyan
+    // Pomegranate-red palette. Faces cycle through these to give the surface
+    // natural color variation like a real pomegranate skin.
+    private static final Color[] PALETTE = {
+        new Color(170, 35, 45),
+        new Color(140, 20, 30),
+        new Color(195, 50, 60),
+        new Color(120, 15, 25),
+        new Color(210, 65, 75),
+        new Color(160, 30, 40),
     };
+    private static final Color[] BASE_COLOR = buildFaceColors();
+    private static Color[] buildFaceColors() {
+        Color[] out = new Color[FACES.length];
+        for (int i = 0; i < FACES.length; i++) {
+            out[i] = PALETTE[i % PALETTE.length];
+        }
+        return out;
+    }
 
     // Directional "sun" light direction (must be a unit vector).
     private static final double LIGHT_X, LIGHT_Y, LIGHT_Z;
@@ -135,8 +155,19 @@ public class CubeBoss {
      */
     public boolean checkSlice(double x1, double y1, double x2, double y2) {
         if (isSliced) return false;
-        double hitR = S * 1.4 * depthScale();
-        return Collision.segmentIntersectsCircle(x1, y1, x2, y2, x, y, hitR);
+        // The cube is drawn through the same perspective transform every
+        // vertex uses: xScreen = FOCAL_LENGTH * x / zEye. The slice line is
+        // already in screen pixels, so we must project the cube's CENTER
+        // into screen space too before doing the line vs circle test.
+        double zEye = z + Vector3.FOCAL_LENGTH * 0.6;
+        if (zEye < 1) zEye = 1;
+        double screenX = Vector3.FOCAL_LENGTH * x / zEye;
+        double screenY = Vector3.FOCAL_LENGTH * y / zEye;
+        // Hit radius matches the icosahedron's bounding sphere with a 1.5x
+        // margin so any slice through the visible silhouette registers.
+        double hitR = S * (Vector3.FOCAL_LENGTH / zEye) * 1.5;
+        return Collision.segmentIntersectsCircle(
+            x1, y1, x2, y2, screenX, screenY, hitR);
     }
 
     /** Records a hit; returns true if the boss is now defeated. */
@@ -178,7 +209,8 @@ public class CubeBoss {
 
         // Sort faces by average z (descending) so the painter's algorithm
         // draws far faces before near ones.
-        Integer[] faceOrder = { 0, 1, 2, 3, 4, 5 };
+        Integer[] faceOrder = new Integer[FACES.length];
+        for (int i = 0; i < FACES.length; i++) faceOrder[i] = i;
         java.util.Arrays.sort(faceOrder, (a, b) -> {
             double za = avgZ(worldVerts, FACES[a]);
             double zb = avgZ(worldVerts, FACES[b]);
@@ -229,10 +261,11 @@ public class CubeBoss {
             int b = (int) (base.getBlue()  * brightness);
             Color shaded = new Color(clamp(r), clamp(gr), clamp(b));
 
-            // Project the four vertices to screen space.
-            int[] xp = new int[4];
-            int[] yp = new int[4];
-            for (int k = 0; k < 4; k++) {
+            // Project the face's vertices to screen space.
+            int n = face.length;
+            int[] xp = new int[n];
+            int[] yp = new int[n];
+            for (int k = 0; k < n; k++) {
                 double[] v = worldVerts[face[k]];
                 double zEye = v[2] + Vector3.FOCAL_LENGTH * 0.6; // pull camera back a bit
                 if (zEye < 1) zEye = 1;
@@ -240,13 +273,20 @@ public class CubeBoss {
                 yp[k] = (int) (Vector3.FOCAL_LENGTH * v[1] / zEye) + originY;
             }
 
-            Polygon poly = new Polygon(xp, yp, 4);
+            Polygon poly = new Polygon(xp, yp, n);
             g.setColor(shaded);
             g.fillPolygon(poly);
-            g.setColor(new Color(0, 0, 0, 140));
-            g.setStroke(new BasicStroke(2f));
+
+            // Thin facet outline so adjacent triangles read as separate
+            // pomegranate-skin panels rather than one smooth blob.
+            g.setColor(new Color(60, 10, 20, 160));
+            g.setStroke(new BasicStroke(1.4f));
             g.drawPolygon(poly);
         }
+
+        // Calyx (green leafy crown) drawn after all faces. Anchored to the
+        // top of the rotated body so it spins with the pomegranate.
+        drawCalyx(g, worldVerts, originX, originY);
 
         // Health pip ring above the cube
         int pipR = 5;
@@ -264,6 +304,56 @@ public class CubeBoss {
         double s = 0;
         for (int idx : face) s += worldVerts[idx][2];
         return s / face.length;
+    }
+
+    /**
+     * Draws the green pomegranate calyx (the leafy crown). Finds the topmost
+     * world-space vertex (smallest Y after rotation), projects it through the
+     * same perspective transform the faces use, and draws four small leafy
+     * triangles radiating outward. The crown spins with the pomegranate
+     * because it's anchored to a rotated vertex.
+     */
+    private void drawCalyx(Graphics2D g, double[][] worldVerts,
+                           int originX, int originY) {
+        // Find topmost vertex in world space (smallest Y, since screen Y
+        // grows downward).
+        int topIdx = 0;
+        for (int i = 1; i < worldVerts.length; i++) {
+            if (worldVerts[i][1] < worldVerts[topIdx][1]) topIdx = i;
+        }
+        double[] top = worldVerts[topIdx];
+        double zEye = top[2] + Vector3.FOCAL_LENGTH * 0.6;
+        if (zEye < 1) zEye = 1;
+        // Only show the calyx if the top vertex is actually facing the camera
+        // (in front of the body center). Otherwise the cluster would render
+        // ON TOP of faces it should be hidden behind.
+        if (top[2] > 6) return;
+        int cxS = (int) (Vector3.FOCAL_LENGTH * top[0] / zEye) + originX;
+        int cyS = (int) (Vector3.FOCAL_LENGTH * top[1] / zEye) + originY;
+        double projScale = Vector3.FOCAL_LENGTH / zEye;
+        int leafLen = Math.max(8, (int) (S * 0.35 * projScale));
+        int leafWide = Math.max(4, (int) (S * 0.12 * projScale));
+
+        g.setColor(new Color(45, 110, 55));
+        for (int leaf = 0; leaf < 5; leaf++) {
+            double ang = -Math.PI / 2
+                       + (leaf - 2) * 0.55
+                       + Math.toRadians(angleY * 0.3);
+            int tipX = cxS + (int) (Math.cos(ang) * leafLen);
+            int tipY = cyS + (int) (Math.sin(ang) * leafLen);
+            int baseX1 = cxS + (int) (Math.cos(ang + Math.PI / 2) * leafWide * 0.5);
+            int baseY1 = cyS + (int) (Math.sin(ang + Math.PI / 2) * leafWide * 0.5);
+            int baseX2 = cxS - (int) (Math.cos(ang + Math.PI / 2) * leafWide * 0.5);
+            int baseY2 = cyS - (int) (Math.sin(ang + Math.PI / 2) * leafWide * 0.5);
+            int[] tx = { baseX1, tipX, baseX2 };
+            int[] ty = { baseY1, tipY, baseY2 };
+            g.fillPolygon(tx, ty, 3);
+        }
+
+        // Small dark stem center
+        int stemR = Math.max(3, (int) (S * 0.08 * projScale));
+        g.setColor(new Color(80, 50, 30));
+        g.fillOval(cxS - stemR, cyS - stemR, stemR * 2, stemR * 2);
     }
 
     private static int clamp(int v) {

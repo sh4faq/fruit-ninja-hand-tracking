@@ -59,7 +59,8 @@ public final class MissionCatalog {
             GameMode.CLASSIC, GoalType.SURVIVE_SECONDS,
             90, 150, 240, Scope.PER_RUN, null));
         list.add(new Mission(
-            "m_chapter_climb", "Chapter Climb", "Reach level 5 in Classic",
+            "m_chapter_climb", "Chapter Climb",
+            "Score 120 / 220 / 380 in Classic for 1 / 2 / 3 stars",
             GameMode.CLASSIC, GoalType.SCORE_AT_LEAST,
             120, 220, 380, Scope.PER_RUN, null));
 

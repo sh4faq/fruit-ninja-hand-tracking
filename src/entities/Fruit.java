@@ -58,11 +58,13 @@ public class Fruit {
 
         this.x = radius + 100 + RNG.nextDouble() * (panelWidth - 2 * radius - 200);
         this.y = panelHeight + radius;
+        this.prevX = this.x;
+        this.prevY = this.y;
 
         double angle = RNG.nextDouble() * 0.6 - 0.3;
         double speed = minSpeed + RNG.nextDouble() * (maxSpeed - minSpeed);
         this.vx = Math.sin(angle) * speed * 0.8;
-        this.vy = -speed * 1.1;
+        this.vy = -speed * 1.05;
 
         // Spawn at a random depth so each wave has visual layering. Most
         // fruits live in the mid-field; a few come from deeper, a few up
@@ -74,7 +76,13 @@ public class Fruit {
         this.rotationSpeed = (RNG.nextDouble() - 0.5) * 0.2;
     }
 
+    // Position from the previous frame, used by checkSlice() to build a
+    // swept-volume hit test so fast-moving fruits can't slip between frames.
+    public double prevX, prevY;
+
     public void update(double dtScale, double gravity) {
+        prevX = x;
+        prevY = y;
         vy += gravity * dtScale;
         x += vx * dtScale;
         y += vy * dtScale;
@@ -99,10 +107,18 @@ public class Fruit {
 
     public boolean checkSlice(double x1, double y1, double x2, double y2) {
         if (isSliced) return false;
-        // Collision uses the depth-scaled radius so deeper fruits are harder
-        // to hit and closer fruits are easier (matches the visual size).
-        double hitR = radius * depthScale();
-        return Collision.segmentIntersectsCircle(x1, y1, x2, y2, x, y, hitR);
+        // Generous 60% hit-radius margin AND a swept check against the
+        // fruit's previous-frame position. Without the sweep, a fast fruit
+        // can fly through the slice line between frames; we now test the
+        // slice against both the current and previous fruit centers and an
+        // intermediate midpoint.
+        double hitR = radius * depthScale() * 1.60;
+        if (Collision.segmentIntersectsCircle(x1, y1, x2, y2, x, y, hitR)) return true;
+        if (Collision.segmentIntersectsCircle(x1, y1, x2, y2,
+                prevX, prevY, hitR)) return true;
+        double midX = (x + prevX) * 0.5;
+        double midY = (y + prevY) * 0.5;
+        return Collision.segmentIntersectsCircle(x1, y1, x2, y2, midX, midY, hitR);
     }
 
     /**
